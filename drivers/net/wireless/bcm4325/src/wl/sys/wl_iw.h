@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_iw.h,v 1.5.34.1.20.10 2009/11/25 02:55:00 Exp $
+ * $Id: wl_iw.h,v 1.5.34.1.20.14 2010/04/29 00:57:27 Exp $
  */
 
 
@@ -33,6 +33,10 @@
 #include <typedefs.h>
 #include <proto/ethernet.h>
 #include <wlioctl.h>
+
+
+
+
 
 
 #define	WL_IW_RSSI_MINVAL		-200	
@@ -50,8 +54,28 @@
 #define WL_IW_SET_PASSIVE_SCAN	(SIOCIWFIRSTPRIV+5)
 #define WL_IW_GET_LINK_SPEED	(SIOCIWFIRSTPRIV+7)
 #define WL_IW_GET_CURR_MACADDR	(SIOCIWFIRSTPRIV+9)
-#define WL_IW_SET_STOP				(SIOCIWFIRSTPRIV+11)
+#define WL_IW_SET_STOP			(SIOCIWFIRSTPRIV+11)
 #define WL_IW_SET_START			(SIOCIWFIRSTPRIV+13)
+
+
+#define WL_SET_AP_CFG           (SIOCIWFIRSTPRIV+15)
+#define WL_AP_STA_LIST          (SIOCIWFIRSTPRIV+17)
+#define WL_AP_MAC_FLTR	        (SIOCIWFIRSTPRIV+19)
+#define WL_AP_BSS_START         (SIOCIWFIRSTPRIV+21)
+#define AP_LPB_CMD              (SIOCIWFIRSTPRIV+23)
+#define WL_AP_STOP              (SIOCIWFIRSTPRIV+25)
+#if defined(CONFIG_LGE_BCM432X_PATCH) && defined(SOFTAP)
+#define WL_FW_RELOAD            (SIOCIWFIRSTPRIV+27)
+#define WL_IW_SET_STOP_SOFTAP	(SIOCIWFIRSTPRIV+29)
+#define WL_IW_SET_START_SOFTAP	(SIOCIWFIRSTPRIV+31)
+#define WL_AP_SPARE1            (SIOCIWFIRSTPRIV+33)
+#define WL_AP_SPARE2            (SIOCIWFIRSTPRIV+35)
+#define WL_AP_SPARE3            (SIOCIWFIRSTPRIV+37)
+#else	/* defined(CONFIG_LGE_BCM432X_PATCH) && defined(SOFTAP) */
+#define WL_AP_SPARE1            (SIOCIWFIRSTPRIV+27)
+#define WL_AP_SPARE2            (SIOCIWFIRSTPRIV+29)
+#define WL_AP_SPARE3            (SIOCIWFIRSTPRIV+31)
+#endif	/* defined(CONFIG_LGE_BCM432X_PATCH) && defined(SOFTAP) */
 
 #define 		G_SCAN_RESULTS 8*1024
 #define 		WE_ADD_EVENT_FIX	0x80
@@ -67,11 +91,14 @@ typedef struct wl_iw {
 	int spy_num;
 	uint32 pwsec;			
 	uint32 gwsec;			
+	bool privacy_invoked; 		
 
 	struct ether_addr spy_addr[IW_MAX_SPY];
 	struct iw_quality spy_qual[IW_MAX_SPY];
 	void  *wlinfo;
+#if defined(BCMDONGLEHOST)
 	dhd_pub_t * pub;
+#endif 
 } wl_iw_t;
 
 struct wl_ctrl {
@@ -82,7 +109,14 @@ struct wl_ctrl {
 	struct completion sysioc_exited;
 };
 
-#define WLC_IW_SS_CACHE_MAXLEN				512
+/* LGE_CHANGE_S, [jisung.yang@lge.com], 2010-06-28, < MAC write > */
+#if defined(CONFIG_LGE_BCM432X_PATCH)
+#define WLC_IW_SS_CACHE_MAXLEN              1024
+#else
+#define WLC_IW_SS_CACHE_MAXLEN              512
+#endif  /* defined(CONFIG_LGE_BCM432X_PATCH) */
+/* LGE_CHANGE_E, [jisung.yang@lge.com], 2010-06-28, < MAC write > */
+
 #define WLC_IW_SS_CACHE_CTRL_FIELD_MAXLEN	32
 #define WLC_IW_BSS_INFO_MAXLEN 				\
 	(WLC_IW_SS_CACHE_MAXLEN - WLC_IW_SS_CACHE_CTRL_FIELD_MAXLEN)
@@ -106,6 +140,41 @@ typedef struct wl_iw_ss_cache_ctrl {
 	uint m_cons_br_scan_cnt;	
 	struct timer_list *m_timer;	
 } wl_iw_ss_cache_ctrl_t;
+typedef enum broadcast_first_scan {
+	BROADCAST_SCAN_FIRST_IDLE = 0,
+	BROADCAST_SCAN_FIRST_STARTED,
+	BROADCAST_SCAN_FIRST_RESULT_READY,
+	BROADCAST_SCAN_FIRST_RESULT_CONSUMED
+} broadcast_first_scan_t;
+
+#ifdef SOFTAP
+#define SSID_LEN	33
+#define SEC_LEN		16
+#define KEY_LEN		65
+#define PROFILE_OFFSET	32
+struct ap_profile {
+	uint8	ssid[SSID_LEN];
+	uint8	sec[SEC_LEN];
+	uint8	key[KEY_LEN];
+	uint32	channel; 
+	uint32	preamble;
+	uint32	max_scb;	
+};
+
+
+#define MACLIST_MODE_DISABLED	0
+#define MACLIST_MODE_ENABLED	1
+#define MACLIST_MODE_ALLOW		2
+struct mflist {
+	uint count;
+	struct ether_addr ea[16];
+};
+struct mac_list_set {
+	uint32	mode;
+	struct mflist white_list;
+	struct mflist black_list;
+};
+#endif   
 
 #if WIRELESS_EXT > 12
 #include <net/iw_handler.h>

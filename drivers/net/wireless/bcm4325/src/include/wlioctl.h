@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wlioctl.h,v 1.601.4.15.2.15.2.23 2009/11/25 02:44:20 Exp $
+ * $Id: wlioctl.h,v 1.601.4.15.2.15.2.30 2010/03/25 13:05:31 Exp $
  */
 
 
@@ -55,6 +55,7 @@ typedef struct wl_action_frame {
 typedef struct wl_af_params {
 	uint32 			channel;
 	int32 			dwell_time;
+	struct ether_addr 	BSSID;
 	wl_action_frame_t	action_frame;
 } wl_af_params_t;
 
@@ -210,7 +211,7 @@ typedef struct wl_iscan_results {
 #define WL_ISCAN_RESULTS_FIXED_SIZE \
 	(WL_SCAN_RESULTS_FIXED_SIZE + OFFSETOF(wl_iscan_results_t, results))
 
-#define WL_NUMRATES		255	
+#define WL_NUMRATES		16	
 typedef struct wl_rateset {
 	uint32	count;			
 	uint8	rates[WL_NUMRATES];	
@@ -227,6 +228,7 @@ typedef struct wl_uint32_list {
 
 typedef struct wl_assoc_params {
 	struct ether_addr bssid;	
+	uint16 bssid_cnt;		
 	int32 chanspec_num;		
 	chanspec_t chanspec_list[1];	
 } wl_assoc_params_t;
@@ -247,6 +249,7 @@ typedef struct wl_join_params {
 #define WL_JOIN_PARAMS_FIXED_SIZE 	(sizeof(wl_join_params_t) - sizeof(chanspec_t))
 
 
+#if defined(BCMSUP_PSK) || defined(BCMDONGLEHOST)
 typedef enum sup_auth_status {
 	
 	WLC_SUP_DISCONNECTED = 0,
@@ -270,6 +273,7 @@ typedef enum sup_auth_status {
 	WLC_SUP_KEYXCHANGE_WAIT_G1,	
 	WLC_SUP_KEYXCHANGE_PREP_G2	
 } sup_auth_status_t;
+#endif 
 
 
 #define	CRYPTO_ALGO_OFF			0
@@ -280,9 +284,6 @@ typedef enum sup_auth_status {
 #define CRYPTO_ALGO_AES_OCB_MSDU	5
 #define CRYPTO_ALGO_AES_OCB_MPDU	6
 #define CRYPTO_ALGO_NALG		7
-#ifdef BCMWAPI_WPI
-#define CRYPTO_ALGO_SMS4		11
-#endif 
 
 #define WSEC_GEN_MIC_ERROR	0x0001
 #define WSEC_GEN_REPLAY		0x0002
@@ -333,9 +334,6 @@ typedef struct {
 #define AES_ENABLED		0x0004
 #define WSEC_SWFLAG		0x0008
 #define SES_OW_ENABLED		0x0040	
-#ifdef BCMWAPI_WPI
-#define SMS4_ENABLED		0x0100
-#endif 
 
 
 #define WPA_AUTH_DISABLED	0x0000	
@@ -347,9 +345,8 @@ typedef struct {
 #define WPA2_AUTH_PSK		0x0080	
 #define BRCM_AUTH_PSK           0x0100  
 #define BRCM_AUTH_DPT		0x0200	
-#ifdef BCMWAPI_WPI
-#define WPA_AUTH_WAPI		0x0400	
-#endif 
+
+#define WPA_AUTH_PFN_ANY	0xffffffff	
 
 
 #define	MAXPMKID		16
@@ -963,35 +960,6 @@ typedef struct wl_aci_args {
 #define WL_EVENTING_MASK_LEN	16
 
 
-#define VNDR_IE_CMD_LEN		4	
-
-
-#define VNDR_IE_BEACON_FLAG	0x1
-#define VNDR_IE_PRBRSP_FLAG	0x2
-#define VNDR_IE_ASSOCRSP_FLAG	0x4
-#define VNDR_IE_AUTHRSP_FLAG	0x8
-#define VNDR_IE_PRBREQ_FLAG	0x10
-#define VNDR_IE_ASSOCREQ_FLAG	0x20
-#define VNDR_IE_CUSTOM_FLAG		0x100 
-
-#define VNDR_IE_INFO_HDR_LEN	(sizeof(uint32))
-
-typedef struct {
-	uint32 pktflag;			
-	vndr_ie_t vndr_ie_data;		
-} vndr_ie_info_t;
-
-typedef struct {
-	int iecount;			
-	vndr_ie_info_t vndr_ie_list[1];	
-} vndr_ie_buf_t;
-
-typedef struct {
-	char cmd[VNDR_IE_CMD_LEN];	
-	vndr_ie_buf_t vndr_ie_buffer;	
-} vndr_ie_setbuf_t;
-
-
 
 
 
@@ -1308,10 +1276,12 @@ typedef struct wl_pfn {
 	int32			auth;			
 	int32			wpa_auth;		
 	int32			wsec;			
+#ifdef WLPFN_AUTO_CONNECT
 	union {
 		wl_wsec_key_t	sec_key;		
 		wsec_pmk_t	wpa_sec_key;		
 	} pfn_security;
+#endif 
 } wl_pfn_t;
 
 
@@ -1644,6 +1614,8 @@ typedef struct wl_rssi_event {
 	int8 rssi_levels[MAX_RSSI_LEVELS];
 } wl_rssi_event_t;
 
+#include <packed_section_end.h>
+
 
 typedef struct {
 	ComplexShort Vpapd;
@@ -1660,6 +1632,36 @@ typedef struct {
 	int16 vswr_corr_bias;
 } lpphy_vswr_cal_t;
 
+
+#include <packed_section_start.h>
+
+#define VNDR_IE_CMD_LEN		4	
+
+
+#define VNDR_IE_BEACON_FLAG	0x1
+#define VNDR_IE_PRBRSP_FLAG	0x2
+#define VNDR_IE_ASSOCRSP_FLAG	0x4
+#define VNDR_IE_AUTHRSP_FLAG	0x8
+#define VNDR_IE_PRBREQ_FLAG	0x10
+#define VNDR_IE_ASSOCREQ_FLAG	0x20
+#define VNDR_IE_CUSTOM_FLAG		0x100 
+
+#define VNDR_IE_INFO_HDR_LEN	(sizeof(uint32))
+
+typedef BWL_PRE_PACKED_STRUCT struct {
+	uint32 pktflag;			
+	vndr_ie_t vndr_ie_data;		
+} BWL_POST_PACKED_STRUCT vndr_ie_info_t;
+
+typedef BWL_PRE_PACKED_STRUCT struct {
+	int iecount;			
+	vndr_ie_info_t vndr_ie_list[1];	
+} BWL_POST_PACKED_STRUCT vndr_ie_buf_t;
+
+typedef BWL_PRE_PACKED_STRUCT struct {
+	char cmd[VNDR_IE_CMD_LEN];	
+	vndr_ie_buf_t vndr_ie_buffer;	
+} BWL_POST_PACKED_STRUCT vndr_ie_setbuf_t;
 
 
 
@@ -1678,9 +1680,8 @@ typedef BWL_PRE_PACKED_STRUCT struct sta_prbreq_wps_ie_list {
 	uint8 ieDataList[1];
 } BWL_POST_PACKED_STRUCT sta_prbreq_wps_ie_list_t;
 
-
-
 #include <packed_section_end.h>
+
 
 #ifdef WLP2P
 
@@ -1696,6 +1697,13 @@ typedef struct wl_p2p_disc_st {
 #define WL_P2P_DISC_ST_SEARCH	2
 
 
+typedef struct wl_p2p_scan {
+	uint8 type;		
+	uint8 reserved[3];
+	
+} wl_p2p_scan_t;
+
+
 typedef struct wl_p2p_if {
 	struct ether_addr addr;
 	uint8 type;	
@@ -1705,6 +1713,12 @@ typedef struct wl_p2p_if {
 
 #define WL_P2P_IF_CLIENT	0
 #define WL_P2P_IF_GO		1
+
+
+typedef struct wl_p2p_ifq {
+	uint bsscfgidx;
+	char ifname[BCM_MSG_IFNAME_MAX];
+} wl_p2p_ifq_t;
 
 
 typedef struct wl_p2p_ops {

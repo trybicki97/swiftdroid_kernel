@@ -17,7 +17,7 @@ config LGE_BCM432X_PATCH
 
 config BCM4325_GPIO_BT_RESET
 	int "GPIO BT_RESET"
-	default 96
+	default 123
 	depends on BCM4325
 
 config BCM4325_GPIO_WL_RESET
@@ -25,14 +25,19 @@ config BCM4325_GPIO_WL_RESET
 	default 93
 	depends on BCM4325
 
+config BCM4325_GPIO_WL_WAKE
+	int "GPIO WL_WAKE"
+	default 153
+	depends on BCM4325
+
 config BCM4325_GPIO_WL_REGON
 	int "GPIO WL_REGON"
-	default 21
+	default 23
 	depends on BCM4325
 
 config BRCM_LGE_WL_HOSTWAKEUP
 	bool "Support BCM4325/BCM4329 Host Wakeup function"
-	default n
+	default 94
 	depends on BCM4325
 
 config BRCM_LGE_WL_HOSTWAKEUP_IOCTL
@@ -68,6 +73,13 @@ config BRCM_USE_DEEPSLEEP
 	depends on BCM4325
 	---help---
 	  Use deepsleep instead of dhd_dev_reset and controlling GPIO when driver start or stop.
+
+config BRCM_USE_SOFTAP
+	bool "Use SoftAP"
+	default n
+	depends on BCM4325
+	---help---
+	Using Softap feature.
 
 config BRCM_USE_STATIC_BUF
 	bool "Use static buff of osl_malloc"

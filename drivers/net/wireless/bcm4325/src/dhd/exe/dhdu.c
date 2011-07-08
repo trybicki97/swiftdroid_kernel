@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhdu.c,v 1.52.2.10.2.6.16.16 2009/10/16 23:20:02 Exp $
+ * $Id: dhdu.c,v 1.52.2.10.2.6.16.18 2009/12/08 23:21:34 Exp $
  */
 
 /* For backwards compatibility, the absense of the define 'BWL_NO_FILESYSTEM_SUPPORT'
@@ -71,6 +71,7 @@ static cmd_func_t dhd_pktgen;
 static cmd_func_t dhd_sprom;
 static cmd_func_t dhd_sdreg;
 static cmd_func_t dhd_sd_msglevel, dhd_sd_blocksize, dhd_sd_mode, dhd_sd_reg;
+static cmd_func_t dhd_dma_mode;
 static cmd_func_t dhd_membytes, dhd_download, dhd_upload, dhd_vars, dhd_idleclock, dhd_idletime;
 static cmd_func_t dhd_logstamp;
 
@@ -86,7 +87,6 @@ static int dhd_iovar_setint(void *dhd, char *name, int var);
 static int file_size(char *fname);
 static int read_vars(char *fname, char *buf, int buf_maxlen);
 #endif
-
 
 
 /* dword align allocation */
@@ -225,8 +225,8 @@ cmd_t dhd_cmds[] = {
 	"g/set blockmode"},
 	{ "sd_ints", dhd_varint, DHD_GET_VAR, DHD_SET_VAR,
 	"g/set client ints"},
-	{ "sd_dma", dhd_varint, DHD_GET_VAR, DHD_SET_VAR,
-	"g/set dma usage"},
+	{ "sd_dma", dhd_dma_mode, DHD_GET_VAR, DHD_SET_VAR,
+	"g/set dma usage: [PIO | SDMA | ADMA1 | ADMA2]"},
 	{ "sd_yieldcpu", dhd_varint, DHD_GET_VAR, DHD_SET_VAR,
 	"allow blocking (yield of CPU) on data xfer"},
 	{ "sd_minyield", dhd_varint, DHD_GET_VAR, DHD_SET_VAR,
@@ -406,6 +406,7 @@ dhd_list(void *dhd, cmd_t *garb, char **argv)
 		printf("%s\n", buf+row*80);
 
 	printf("\n");
+	free(buf);
 	return (0);
 }
 
@@ -669,6 +670,7 @@ static dbg_msg_t dhd_sd_msgs[] = {
 	{SDH_DATA_VAL,	"data"},
 	{SDH_CTRL_VAL,	"control"},
 	{SDH_LOG_VAL,	"log"},
+	{SDH_DMA_VAL,	"dma"},
 	{0,		NULL}
 };
 
@@ -683,7 +685,7 @@ dhd_sd_blocksize(void *dhd, cmd_t *cmd, char **argv)
 {
 	int ret;
 	int argc;
-	char *endptr;
+	char *endptr = NULL;
 	void *ptr = NULL;
 	int func, size;
 
@@ -762,6 +764,56 @@ dhd_sd_mode(void *wl, cmd_t *cmd, char **argv)
 	return (ret);
 }
 
+static int
+dhd_dma_mode(void *wl, cmd_t *cmd, char **argv)
+{
+	int ret;
+	int argc;
+	int dmamode;
+
+	/* arg count */
+	for (argc = 0; argv[argc]; argc++);
+	argc--;
+
+	if (argv[1]) {
+		if (!stricmp(argv[1], "pio")) {
+			strcpy(argv[1], "0");
+		} else if (!strcmp(argv[1], "0")) {
+		} else if (!stricmp(argv[1], "dma")) {
+			strcpy(argv[1], "1");
+		} else if (!stricmp(argv[1], "sdma")) {
+			strcpy(argv[1], "1");
+		} else if (!strcmp(argv[1], "1")) {
+		} else if (!stricmp(argv[1], "adma1")) {
+			strcpy(argv[1], "2");
+		} else if (!stricmp(argv[1], "adma")) {
+			strcpy(argv[1], "3");
+		} else if (!stricmp(argv[1], "adma2")) {
+			strcpy(argv[1], "3");
+		} else {
+			return USAGE_ERROR;
+		}
+
+		ret = dhd_var_setint(wl, cmd, argv);
+
+	} else {
+		if ((ret = dhd_var_get(wl, cmd, argv))) {
+			return (ret);
+		} else {
+			dmamode = *(int32*)buf;
+
+			printf("DMA Mode is: %s\n",
+			       dmamode == 0 ? "PIO"
+			       : dmamode == 1 ? "SDMA"
+			       : dmamode == 2 ? "ADMA1"
+			       : dmamode == 3 ? "ADMA2"
+			       : "Unknown");
+		}
+	}
+
+	return (ret);
+}
+
 
 static int
 dhd_sdreg(void *dhd, cmd_t *cmd, char **argv)
@@ -769,7 +821,7 @@ dhd_sdreg(void *dhd, cmd_t *cmd, char **argv)
 	int ret;
 	sdreg_t sdreg;
 	uint argc;
-	char *ptr;
+	char *ptr = NULL;
 
 	UNUSED_PARAMETER(cmd);
 
@@ -991,7 +1043,7 @@ static int
 dhd_idletime(void *dhd, cmd_t *cmd, char **argv)
 {
 	int32 idletime;
-	char *endptr;
+	char *endptr = NULL;
 	int err = 0;
 
 	if (argv[1]) {
@@ -1040,7 +1092,7 @@ static int
 dhd_idleclock(void *dhd, cmd_t *cmd, char **argv)
 {
 	int32 idleclock;
-	char *endptr;
+	char *endptr = NULL;
 	int err = 0;
 
 	if (argv[1]) {
@@ -1784,7 +1836,7 @@ static int
 dhd_logstamp(void *dhd, cmd_t *cmd, char **argv)
 {
 	int ret;
-	char *endptr;
+	char *endptr = NULL;
 	uint argc;
 	int valn[2] = {0, 0};
 
@@ -1821,7 +1873,7 @@ dhd_sd_reg(void *dhd, cmd_t *cmd, char **argv)
 {
 	int ret;
 	sdreg_t sdreg;
-	char *endptr;
+	char *endptr = NULL;
 	uint argc;
 	void *ptr = NULL;
 
@@ -1911,8 +1963,8 @@ static int
 dhd_do_msglevel(void *dhd, cmd_t *cmd, char **argv, dbg_msg_t *dbg_msg)
 {
 	int ret, i;
-	uint val, last_val = 0, msglevel, msglevel_add = 0, msglevel_del = 0;
-	char *endptr;
+	uint val, last_val = 0, msglevel = 0, msglevel_add = 0, msglevel_del = 0;
+	char *endptr = NULL;
 
 	if ((ret = dhd_iovar_getint(dhd, cmd->name, (int*)&msglevel)) < 0)
 		return (ret);
@@ -2024,7 +2076,7 @@ dhd_var_setint(void *dhd, cmd_t *cmd, char **argv)
 	int32 val;
 	int len;
 	char *varname;
-	char *endptr;
+	char *endptr = NULL;
 	char *p;
 
 	if (cmd->set == -1) {

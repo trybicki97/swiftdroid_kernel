@@ -32,7 +32,7 @@ else
 	#    <NAME>_REL_<MAJ>_<MINOR>_RC<RCNUM>_<INCREMENTAL>
 	#    
  
-	CVSTAG="$Name: RAPTOR2_REL_4_217_67 $"
+	CVSTAG="$Name: RAPTOR2_REL_4_217_91 $"
 
 	# Remove leading cvs "Name: " and trailing " $"
 	CVSTAG=${CVSTAG/#*: /}

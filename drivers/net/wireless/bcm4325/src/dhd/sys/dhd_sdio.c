@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_sdio.c,v 1.157.2.27.2.36.4.71 2009/10/15 00:11:28 Exp $
+ * $Id: dhd_sdio.c,v 1.157.2.27.2.36.4.75 2010/03/22 00:41:21 Exp $
  */
 
 #include <typedefs.h>
@@ -59,12 +59,6 @@
 #include <dhd_dbg.h>
 #include <dhdioctl.h>
 #include <sdiovar.h>
-
-#if defined(BCMLXSDMMC)
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
-#include <linux/wakelock.h>
-#endif /*  LinuxVer */
-#endif /* BCMLXSDMMC */
 
 #define DOWNLOAD_ARRAY    /* WAR: Not using malloc when download firmware */
 
@@ -152,7 +146,7 @@ DHD_SPINWAIT_SLEEP_INIT(sdioh_spinwait_sleep);
 
 int gDK8 = FALSE;			/* Temp flag for DevKit8000 support */
 					/* This will go away soon */
-
+/* LGE_CHANGE_S, [yoohoo@lge.com], 2010-1-13, <Packet filter> */
 #if defined(CONFIG_BRCM_LGE_WL_PKTFILTER)
 typedef struct wl_filter_tag {
 uint32 filterid;
@@ -174,7 +168,9 @@ int dhd_config_pktfilter(dhd_pub_t *dhd, uint32 id ,uint32 flag);
 wl_filter_tag_t filters[MAX_PKT_FILTERS];
 
 #endif /* CONFIG_BRCM_LGE_WL_PKTFILTER */
+/* LGE_CHANGE_E, [yoohoo@lge.com], 2010-1-13, <Packet filter> */
 
+extern int dhdcdc_set_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len);
 /* Private data for SDIO bus interaction */
 typedef struct dhd_bus {
 	dhd_pub_t *dhd;
@@ -460,11 +456,13 @@ static int dhdsdio_download_code_array(struct dhd_bus *bus);
 #endif
 
 #if defined(CONFIG_HAS_EARLYSUSPEND)
+/* LGE_CHANGE_S [yoohoo@lge.com] 2009-11-19, Support Host Wakeup */
 #if defined(CONFIG_BRCM_LGE_WL_HOSTWAKEUP)
 #include <linux/wakelock.h>
 extern int dhd_suspend_context;
 extern struct wake_lock wlan_host_wakelock;
 #endif /* CONFIG_BRCM_LGE_WL_HOSTWAKEUP */
+/* LGE_CHANGE_S [yoohoo@lge.com] 2009-11-19, Support Host Wakeup */
 extern void *dhd_es_get_dhd_bus(void);
 extern void dhd_es_set_dhd_bus(void *);
 extern bool dhd_early_suspend_state(void);
@@ -923,7 +921,7 @@ dhdsdio_txpkt(dhd_bus_t *bus, void *pkt, uint chan, bool free_pkt)
 	void *new;
 	int i;
 
-	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
+	DHD_TRACE(("%s: Enter -- free_pkt = %d\n", __FUNCTION__, free_pkt));
 
 	sdh = bus->sdh;
 	osh = bus->dhd->osh;
@@ -1125,6 +1123,7 @@ dhd_bus_txdata(struct dhd_bus *bus, void *pkt)
 
 	osh = bus->dhd->osh;
 	datalen = PKTLEN(osh, pkt);
+	DHD_TRACE(("%s: transmit packet of %d bytes\n", __FUNCTION__,datalen));
 
 #ifdef SDTEST
 	/* Push the test header if doing loopback */
@@ -1152,11 +1151,11 @@ dhd_bus_txdata(struct dhd_bus *bus, void *pkt)
 	    (!DATAOK(bus)) || (bus->flowcontrol & NBITVAL(prec)) ||
 	    (bus->clkstate == CLK_PENDING)) {
 		bus->fcqueued++;
-
 		/* Priority based enq */
 		dhd_os_sdlock_txq(bus->dhd);
 		if (dhd_prec_enq(bus, &bus->txq, pkt, prec) == FALSE) {
 			PKTPULL(osh, pkt, SDPCM_HDRLEN);
+			DHD_TRACE(("%s: -> dhd_txcomplete()\n", __FUNCTION__));
 			dhd_txcomplete(bus->dhd, pkt, FALSE);
 			PKTFREE(osh, pkt, TRUE);
 			ret = BCME_NORESOURCE;
@@ -1165,8 +1164,10 @@ dhd_bus_txdata(struct dhd_bus *bus, void *pkt)
 			ret = BCME_OK;
 		dhd_os_sdunlock_txq(bus->dhd);
 
-		if ((pktq_len(&bus->txq) >= FCHI) && dhd_doflow)
+		if ((pktq_len(&bus->txq) >= FCHI) && dhd_doflow) {
+			DHD_TRACE(("%s: -> dhd_txflowcontrol()\n", __FUNCTION__));
 			dhd_txflowcontrol(bus->dhd, 0, ON);
+		}
 
 #ifdef DHD_DEBUG
 		if (pktq_plen(&bus->txq, prec) > qcount[prec])
@@ -1174,6 +1175,7 @@ dhd_bus_txdata(struct dhd_bus *bus, void *pkt)
 #endif
 		/* Schedule DPC if needed to send queued packet(s) */
 		if (dhd_deferred_tx && !bus->dpc_sched) {
+			DHD_TRACE(("%s: -> deferred tx -> dhd_sched_dpc()\n", __FUNCTION__));
 			bus->dpc_sched = TRUE;
 			dhd_sched_dpc(bus->dhd);
 		}
@@ -1191,10 +1193,14 @@ dhd_bus_txdata(struct dhd_bus *bus, void *pkt)
 		ret = dhdsdio_txpkt(bus, pkt,
 		        (bus->ext_loop ? SDPCM_TEST_CHANNEL : SDPCM_DATA_CHANNEL), TRUE);
 #endif
-		if (ret)
+		if (ret) {
 			bus->dhd->tx_errors++;
-		else
+			DHD_TRACE(("%s: -> Error tx:%ld\n", __FUNCTION__,bus->dhd->tx_errors));
+
+		}
+		else {
 			bus->dhd->dstats.tx_bytes += datalen;
+		}
 
 		if ((bus->idletime == DHD_IDLE_IMMEDIATE) && !bus->dpc_sched) {
 			bus->activity = FALSE;
@@ -1712,7 +1718,7 @@ dhdsdio_membytes(dhd_bus_t *bus, bool write, uint32 address, uint8 *data, uint s
 xfer_done:
 	/* Return the window to backplane enumeration space for core access */
 	if (dhdsdio_set_siaddr_window(bus, bcmsdh_cur_sbwad(bus->sdh))) {
-		DHD_ERROR(("%s: FAILED to return to 0x%x\n", __FUNCTION__,
+		DHD_ERROR(("%s: FAILED to set window back to 0x%x\n", __FUNCTION__,
 			bcmsdh_cur_sbwad(bus->sdh)));
 	}
 
@@ -2524,8 +2530,10 @@ dhd_bus_init(dhd_pub_t *dhdp, bool enforce_mutex)
 	/* Give the dongle some time to do its thing and set IOR2 */
 	retries = DHD_WAIT_F2RDY;
 	while ((enable !=
-	        ((ready = bcmsdh_cfg_read(bus->sdh, SDIO_FUNC_0, SDIOD_CCCR_IORDY, NULL)))) &&
+	        ((ready = bcmsdh_cfg_read(bus->sdh, SDIO_FUNC_0, SDIOD_CCCR_IORDY, &err)))) &&
 	       retries--) {
+			   if(err) err=0;
+			   DHD_TRACE(("%s: Wait for card to be enabled: retry #%d\n", __FUNCTION__, retries));
 		OSL_DELAY(1000);
 	}
 
@@ -2784,7 +2792,7 @@ dhdsdio_rxglom(dhd_bus_t *bus, uint8 rxseq)
 			dptr += sizeof(uint16);
 			if ((sublen < SDPCM_HDRLEN) ||
 			    ((num == 0) && (sublen < (2 * SDPCM_HDRLEN)))) {
-				DHD_ERROR(("%s: desciptor len %d bad: %d\n",
+				DHD_ERROR(("%s: descriptor len %d bad: %d\n",
 				           __FUNCTION__, num, sublen));
 				pnext = NULL;
 				break;
@@ -3760,8 +3768,10 @@ dhdsdio_hostmail(dhd_bus_t *bus)
 		bus->flowcontrol = fcbits;
 	}
 
+
 	/* Shouldn't be any others */
 	if (hmb_data & ~(HMB_DATA_DEVREADY |
+	                 HMB_DATA_FWHALT |
 	                 HMB_DATA_NAKHANDLED |
 	                 HMB_DATA_FC |
 	                 HMB_DATA_FWREADY |
@@ -3923,15 +3933,20 @@ dhdsdio_dpc(dhd_bus_t *bus)
 
 	/* On frame indication, read available frames */
 	if (PKT_AVAILABLE()) {
+/* LGE_CHANGE_S [yoohoo@lge.com] 2009-11-19, Support Host Wakeup */
 #if defined(CONFIG_BRCM_LGE_WL_HOSTWAKEUP)
 		//Is this location appropriate??.. Need to test more.
 		/*Hold a wake lock to avoid suspend-resume to often if there is continuous data
 	         * transfer. */
 		if(dhd_suspend_context == FALSE)
 		{
-			wake_lock_timeout(&wlan_host_wakelock, 2*HZ);
+/* LGE_CHANGE_S, [hyuksang], due to power consumption, the below line is discarded to reduce 2s delay */
+
+		//	wake_lock_timeout(&wlan_host_wakelock, 2*HZ);
+/* LGE_CHANGE_E, [hyuksang], due to power consumption, the below line is discarded to reduce 2s delay */
 		}
 #endif /* CONFIG_BRCM_LGE_WL_HOSTWAKEUP */
+/* LGE_CHANGE_S [yoohoo@lge.com] 2009-11-19, Support Host Wakeup */
 		framecnt = dhdsdio_readframes(bus, rxlimit, &rxdone);
 		if (rxdone || bus->rxskip)
 			intstatus &= ~I_HMB_FRAME_IND;
@@ -3964,8 +3979,11 @@ clkwait:
 	/* Resched if events or tx frames are pending, else await next interrupt */
 	/* On failed register access, all bets are off: no resched or interrupts */
 	if ((bus->dhd->busstate == DHD_BUS_DOWN) || bcmsdh_regfail(sdh)) {
-		DHD_ERROR(("%s: failed backplane access over SDIO, halting operation\n",
-		           __FUNCTION__));
+		DHD_ERROR(("%s: failed backplane access over SDIO, halting operation %d \n",
+		           __FUNCTION__, bcmsdh_regfail(sdh)));
+#if defined(CONFIG_LGE_BCM432X_PATCH)
+		bcmsdh_intr_disable(bus->sdh);
+#endif
 		bus->dhd->busstate = DHD_BUS_DOWN;
 		bus->intstatus = 0;
 	} else if (bus->clkstate == CLK_PENDING) {
@@ -4031,9 +4049,11 @@ dhdsdio_isr(void *arg)
 	bus->intdis = TRUE;
 
 #if defined(SDIO_ISR_THREAD)
+/* LGE_CHANGE_S [yoohoo@lge.com] 2009-11-19, Support Host Wakeup */
 #if defined(CONFIG_BRCM_LGE_WL_HOSTWAKEUP)
 	bus->dpc_sched = TRUE;
 #endif /* CONFIG_BRCM_LGE_WL_HOSTWAKEUP */
+/* LGE_CHANGE_E [yoohoo@lge.com] 2009-11-19, Support Host Wakeup */
 	DHD_TRACE(("Calling dhdsdio_dpc() from %s\n", __FUNCTION__));
 	dhdsdio_dpc(bus);
 #else
@@ -4542,12 +4562,13 @@ dhdsdio_probe(uint16 venid, uint16 devid, uint16 bus_no, uint16 slot,
 
 
 	/* if firmware path present try to download and bring up bus */
-	if ((ret = dhd_bus_start(bus->dhd)) == -1) {
-		DHD_TRACE(("%s: warning : check if firmware was provided\n", __FUNCTION__));
-	}
-	else if (ret == BCME_NOTUP)  {
-		DHD_ERROR(("%s: dongle is not responding\n", __FUNCTION__));
+	if ((ret = dhd_bus_start(bus->dhd)) != 0) {
+		DHD_ERROR(("%s: failed\n", __FUNCTION__));
 		goto fail;
+		if (ret == BCME_NOTUP)  {
+			DHD_ERROR(("%s: dongle is not responding\n", __FUNCTION__));
+			goto fail;
+		}
 	}
 	/* Ok, have the per-port tell the stack we're open for business */
 	if (dhd_net_attach(bus->dhd, 0) != 0) {
@@ -5391,7 +5412,7 @@ dhd_bus_devreset(dhd_pub_t *dhdp, uint8 flag)
 					dhdsdio_download_firmware(bus, bus->dhd->osh, bus->sdh)) {
 
 					/* Re-init bus, enable F2 transfer */
-					dhd_bus_init((dhd_pub_t *) bus->dhd, TRUE);
+					dhd_bus_init((dhd_pub_t *) bus->dhd, FALSE);
 
 #if defined(OOB_INTR_ONLY)
 					dhd_enable_oob_intr(bus, TRUE);
@@ -5420,6 +5441,7 @@ dhd_bus_devreset(dhd_pub_t *dhdp, uint8 flag)
 	return bcmerror;
 }
 
+/* LGE_CHANGE_S, [yoohoo@lge.com], 2010-1-13, <ARP offload, Packet filter> */
 #if defined(CONFIG_BRCM_LGE_WL_ARPOFFLOAD) || defined(CONFIG_BRCM_LGE_WL_PKTFILTER)
 int dhdsdio_setiovar(struct dhd_bus *bus, char *cmd, void *data, int size)
 {
@@ -5463,7 +5485,9 @@ int dhdsdio_setiovar(struct dhd_bus *bus, char *cmd, void *data, int size)
 
 }
 #endif	/* defined(CONFIG_BRCM_LGE_WL_ARPOFFLOAD) || defined(CONFIG_BRCM_LGE_WL_PKTFILTER) */
+/* LGE_CHANGE_E, [yoohoo@lge.com], 2010-1-13, <ARP offload, Packet filter> */
 
+/* LGE_CHANGE_S, [yoohoo@lge.com], 2010-1-13, <ARP offload> */
 #if defined(CONFIG_BRCM_LGE_WL_HOSTWAKEUP) && defined(CONFIG_BRCM_LGE_WL_ARPOFFLOAD)
 int dhd_config_arp_offload(dhd_bus_t *bus, bool flag)
 
@@ -5556,7 +5580,37 @@ int dhd_config_arp_offload(dhd_bus_t *bus, bool flag)
 		return 0;
 }
 #endif	/* defined(CONFIG_BRCM_LGE_WL_HOSTWAKEUP) && defined(CONFIG_BRCM_LGE_WL_ARPOFFLOAD) */
+/* LGE_CHANGE_E, [yoohoo@lge.com], 2010-1-13, <ARP offload> */
 
+/* LGE_CHANGE_s, [jisung.yang@lge.com], 2010-08-24, <Set listen interval and dtim listen> */
+#if defined(CONFIG_BRCM_LGE_WL_HOSTWAKEUP) && defined(CONFIG_BRCM_LGE_WL_ARPOFFLOAD)
+extern uint wl_dtim_val;
+int dhdsdio_set_dtim(struct dhd_bus *bus, int enable)
+{
+	//dhd_pub_t *dhd = NULL;
+	int value, ret;
+	//char iovbuf[WLC_IOCTL_SMLEN];
+
+	DHD_INFO(("%s: Enter\n", __FUNCTION__));
+	if(!bus)
+		return -1;
+
+	if ( enable ){	
+		value = wl_dtim_val;
+	}
+	else{
+		value = 0;
+	}
+
+	ret = dhdsdio_setiovar(bus, "bcn_li_dtim", &value, sizeof(value));
+	if( ret < 0 )
+		DHD_ERROR(("%s: bcn_li_dtim ioctl error %d\n",__FUNCTION__,ret));
+		
+	return 0;
+}
+#endif
+/* LGE_CHANGE_E, [jisung.yang@lge.com], 2010-08-24, <Set listen interval and dtim listen> */
+/* LGE_CHANGE_S, [yoohoo@lge.com], 2010-1-13, <Packet filter> */
 #if defined(CONFIG_BRCM_LGE_WL_HOSTWAKEUP) && defined(CONFIG_BRCM_LGE_WL_PKTFILTER)
 int dhdsdio_enable_filters(struct dhd_bus *bus)
 {
@@ -5757,3 +5811,4 @@ int dhd_config_pktfilter(dhd_pub_t *dhd, uint32 id ,uint32 flag)
 }
 
 #endif	/* defined(CONFIG_BRCM_LGE_WL_HOSTWAKEUP) && defined(CONFIG_BRCM_LGE_WL_PKTFILTER) */
+/* LGE_CHANGE_E, [yoohoo@lge.com], 2010-1-13, <Packet filter> */

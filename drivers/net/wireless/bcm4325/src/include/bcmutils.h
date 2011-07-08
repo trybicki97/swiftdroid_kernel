@@ -20,7 +20,7 @@
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
- * $Id: bcmutils.h,v 13.184.4.6.2.1.26.6 2009/11/25 02:44:20 Exp $
+ * $Id: bcmutils.h,v 13.184.4.6.2.1.26.8 2009/12/10 20:18:43 Exp $
  */
 
 
@@ -330,8 +330,11 @@ extern int bcm_iovar_lencheck(const bcm_iovar_t *table, void *arg, int len, bool
 #define BCME_NOT_WME_ASSOCIATION	-34	
 #define BCME_SDIO_ERROR			-35	
 #define BCME_DONGLE_DOWN		-36	
-#define BCME_VERSION			-37 
-#define BCME_LAST			BCME_VERSION
+#define BCME_VERSION			-37	
+#define BCME_TXFAIL			-38	
+#define BCME_RXFAIL			-39	
+#define BCME_NODEVICE			-40	
+#define BCME_LAST			BCME_NODEVICE
 
 
 #define BCMERRSTRINGTABLE {		\
@@ -372,7 +375,10 @@ extern int bcm_iovar_lencheck(const bcm_iovar_t *table, void *arg, int len, bool
 	"Not WME Association",		\
 	"SDIO Bus Error",		\
 	"Dongle Not Accessible",	\
-	"Incorrect version"	\
+	"Incorrect version",		\
+	"TX Failure",			\
+	"RX Failure",			\
+	"Device Not Present",		\
 }
 
 #ifndef ABS

@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd.h,v 1.32.4.7.2.4.28.37 2009/10/30 22:43:52 Exp $
+ * $Id: dhd.h,v 1.32.4.7.2.4.28.41 2010/05/04 11:02:23 Exp $
  */
 
 /****************
@@ -34,7 +34,6 @@
 #ifndef _dhd_h_
 #define _dhd_h_
 
-#if defined(LINUX)
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
@@ -52,14 +51,6 @@
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined (CONFIG_HAS_WAKELOCK) */
 
 /* The kernel threading is sdio-specific */
-#else /* LINUX */
-#define ENOMEM		1
-#define EFAULT      2
-#define EINVAL		3
-#define EIO			4
-#define ETIMEDOUT	5
-#define ERESTARTSYS 6
-#endif /* LINUX */
 
 #include <wlioctl.h>
 
@@ -67,7 +58,6 @@
 #include <wdf.h>
 #include <WdfMiniport.h>
 #endif /* NDIS60 */
-
 /* Forward decls */
 struct dhd_bus;
 struct dhd_prot;
@@ -157,13 +147,11 @@ typedef struct dhd_pub {
 } dhd_pub_t;
 
 #ifdef NDIS60
-
 typedef struct _wdf_device_info {
 	dhd_pub_t *dhd;
 } wdf_device_info_t;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(wdf_device_info_t, dhd_get_wdf_device_info)
-
 
 #endif /* NDIS60 */
 
@@ -208,7 +196,7 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(wdf_device_info_t, dhd_get_wdf_device_info)
 	} while (0)
 
 	#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined(CONFIG_PM_SLEEP) */
-
+#define DHD_IF_VIF	0x01	/* Virtual IF (Hidden from user) */
 
 inline static void WAKE_LOCK_INIT(dhd_pub_t * dhdp, int index, char * y)
 {
@@ -248,6 +236,8 @@ inline static void WAKE_LOCK_DESTROY(dhd_pub_t * dhdp, int index)
 typedef struct dhd_if_event {
 	uint8 ifidx;
 	uint8 action;
+	uint8 flags;
+	uint8 bssidx;
 } dhd_if_event_t;
 
 /*
@@ -305,11 +295,13 @@ extern void dhd_os_sdunlock_txq(dhd_pub_t * pub);
 extern void dhd_os_sdlock_rxq(dhd_pub_t * pub);
 extern void dhd_os_sdunlock_rxq(dhd_pub_t * pub);
 extern void dhd_os_sdlock_sndup_rxq(dhd_pub_t * pub);
+/* LGE_CHANGE_S [yoohoo@lge.com] 2009-12-08, support start/stop */
 #if defined(CONFIG_LGE_BCM432X_PATCH)
 extern void dhd_customer_gpio_wlan_ctrl(int onoff, int irq_detect_ctrl);
 #else /* CONFIG_LGE_BCM432X_PATCH */
 extern void dhd_customer_gpio_wlan_ctrl(int onoff);
 #endif /* CONFIG_LGE_BCM432X_PATCH */
+/* LGE_CHANGE_E [yoohoo@lge.com] 2009-12-08, support start/stop */
 extern void dhd_os_sdunlock_sndup_rxq(dhd_pub_t * pub);
 #if defined(OOB_INTR_ONLY)
 extern int dhd_customer_oob_irq_map(void);
@@ -328,14 +320,23 @@ extern void dhd_timeout_start(dhd_timeout_t *tmo, uint usec);
 extern int dhd_timeout_expired(dhd_timeout_t *tmo);
 
 extern int dhd_ifname2idx(struct dhd_info *dhd, char *name);
+extern uint8 *dhd_bssidx2bssid(dhd_pub_t *dhd, int idx);
 extern int wl_host_event(struct dhd_info *dhd, int *idx, void *pktdata,
 wl_event_msg_t *, void **data_ptr);
 extern void wl_event_to_host_order(wl_event_msg_t * evt);
 
 extern void dhd_common_init(void);
 
-extern int dhd_add_if(struct dhd_info *dhd, int ifidx, void *handle, char *name, uint8 *mac_addr);
+extern int dhd_add_if(struct dhd_info *dhd, int ifidx, void *handle,
+	char *name, uint8 *mac_addr, uint32 flags, uint8 bssidx);
 extern void dhd_del_if(struct dhd_info *dhd, int ifidx);
+
+extern void dhd_vif_add(struct dhd_info *dhd, int ifidx, char * name);
+extern void dhd_vif_del(struct dhd_info *dhd, int ifidx);
+
+extern void dhd_event(struct dhd_info *dhd, char *evpkt, int evlen, int ifidx);
+extern void dhd_vif_sendup(struct dhd_info *dhd, int ifidx, uchar *cp, int len);
+
 
 /* Send pakcet to dongle via data channel */
 extern int dhd_sendpkt(dhd_pub_t *dhdp, int ifidx, void *pkt);
@@ -358,6 +359,7 @@ typedef enum cust_gpio_modes {
 	WLAN_POWER_OFF
 } cust_gpio_modes_t;
 
+extern int wl_iw_iscan_set_scan_broadcast_prep(struct net_device *dev, uint flag);
 
 /*
  * Insmod parameters for debug/test
@@ -393,12 +395,20 @@ extern uint dhd_pktgen_len;
 
 
 /* optionally set by a module_param_string() */
+/* LGE_CHANGE_S [jisung.yang@lge.com] 2010-04-24, gcc compile of this version limits array size. */
+#if 0
 #define MOD_PARAM_PATHLEN	2048
+#else
+#define MOD_PARAM_PATHLEN	512
+#endif
+/* LGE_CHANGE_E [jisung.yang@lge.com] 2010-04-24, gcc compile of this version limits array size. */
 extern char fw_path[MOD_PARAM_PATHLEN];
 extern char nv_path[MOD_PARAM_PATHLEN];
+/* LGE_CHANGE_S [yoohoo@lge.com] 2009-04-03, configs */
 #if defined(CONFIG_LGE_BCM432X_PATCH)
 extern char config_path[MOD_PARAM_PATHLEN];
 #endif /* CONFIG_LGE_BCM432X_PATCH */
+/* LGE_CHANGE_E [yoohoo@lge.com] 2009-04-03, configs */
 
 /* For supporting multiple interfaces */
 #define DHD_MAX_IFS	16
