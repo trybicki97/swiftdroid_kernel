@@ -52,17 +52,6 @@
 #include "pm.h"
 #include "spm.h"
 
-
-enum {
-	MSM_PM_NO_HIDDEN_RESET = 0,
-	MSM_PM_HIDDEN_RESET,
-};
-
-#define HW_RESET_LGE_HIDDEN_RESET_MAGIC1 0xABCDEF01
-#define HW_RESET_LGE_HIDDEN_RESET_MAGIC2 0x23456789
-
-int swift_hidden_reset = 0;
-
 /******************************************************************************
  * Debug Definitions
  *****************************************************************************/
@@ -116,27 +105,6 @@ module_param_named(
 /******************************************************************************
  * Sleep Modes and Parameters
  *****************************************************************************/
-
-int msm_pm_boot_complete = 0;
-module_param_named(boot_complete, msm_pm_boot_complete, int, S_IRUGO | S_IWUSR | S_IWGRP); 
-
-static int msm_pm_hidden_reset = MSM_PM_NO_HIDDEN_RESET;
-module_param_named(hidden_reset, msm_pm_hidden_reset, bool, S_IRUGO | S_IWUSR | S_IWGRP);
-
-int Is_kernel_crashed = 0;
-
-int msm_pm_hidden_resetting = 0;
-module_param_named(hidden_resetting, msm_pm_hidden_resetting, int, S_IRUGO | S_IWUSR | S_IWGRP);
-
-extern int msm_fb_refesh_enabled;
-module_param_named(msm_fb_refresh, msm_fb_refesh_enabled, bool, S_IRUGO | S_IWUSR | S_IWGRP);
-
-int get_status_hidden_reset()
-{
-	return msm_pm_hidden_reset;
-}
-
-
 
 static int msm_pm_sleep_mode = CONFIG_MSM7X00A_SLEEP_MODE;
 module_param_named(
@@ -1680,53 +1648,6 @@ static struct platform_suspend_ops msm_pm_ops = {
 
 static uint32_t restart_reason = 0x776655AA;
 
-#if defined(CONFIG_MACH_MSM7X27_SWIFT)
-
-#define CUSTOMER_CMD2_POWER_DOWN		0x0001
-#define CUSTOMER_CMD2_RESET_CHIP		0x0002
-
-struct ram_console_buffer {
-	uint32_t    sig;
-	uint32_t    start;
-	uint32_t    size;
-	uint8_t     data[0];
-};
-
-static struct ram_console_buffer *ram_console_buffer = 0;
-extern struct ram_console_buffer *get_ram_console_buffer(void);
-static void msm_pm_power_off(void)
-{
-	int fntype = CUSTOMER_CMD2_POWER_DOWN;
-	msm_proc_comm(PCOM_CUSTOMER_CMD2, 0, &fntype);
-	for (;;)
-		;
-}
-
-extern uint32_t g_fb_addr;
-static void msm_pm_restart(char str)
-{
-	int fntype = CUSTOMER_CMD2_RESET_CHIP;
-	uint32_t *reason_addr;
-	uint32_t *fb_addr;
-
-	ram_console_buffer = get_ram_console_buffer();
-	reason_addr = &ram_console_buffer->data[1024*128-16];
-	if( (msm_pm_hidden_reset == MSM_PM_HIDDEN_RESET)&&(Is_kernel_crashed == 1)){
-		printk(KERN_INFO "%s: passing the hidden reset information\n",__func__);
-		fb_addr = &ram_console_buffer->data[1024*128-20];
-		*reason_addr = 0x73122000;
-		*fb_addr = g_fb_addr;
-	} else {
-			*reason_addr = restart_reason;
-	}
-
-
-	msm_proc_comm(PCOM_CUSTOMER_CMD2, &restart_reason, &fntype);
-
-	for (;;)
-		;
-}
-#else	// origin
 static void msm_pm_power_off(void)
 {
 	msm_rpcrouter_close();
@@ -1743,7 +1664,6 @@ static void msm_pm_restart(char str)
 	for (;;)
 		;
 }
-#endif
 
 static int msm_reboot_call
 	(struct notifier_block *this, unsigned long code, void *_cmd)
@@ -1787,9 +1707,7 @@ static int __init msm_pm_init(void)
 #ifdef CONFIG_MSM_IDLE_STATS
 	struct proc_dir_entry *d_entry;
 #endif
-        int ret;
-	uint32_t *reason_addr;
-	uint32_t hidden_rst_value;
+	int ret;
 
 	pm_power_off = msm_pm_power_off;
 	arm_pm_restart = msm_pm_restart;
@@ -1844,23 +1762,6 @@ static int __init msm_pm_init(void)
 		d_entry->data = NULL;
 	}
 #endif
-
-	ram_console_buffer = get_ram_console_buffer();
-	reason_addr = &ram_console_buffer->data[1024*128-16];
-	hidden_rst_value = (*reason_addr);
-
-	if(hidden_rst_value == 0x73122000){
-		swift_hidden_reset = 1;
-		msm_pm_hidden_resetting = 1;
-		printk(KERN_INFO "%s: boot from hidden reset\n",__func__);
-	} else {
-		msm_pm_hidden_resetting = 0;
-		printk(KERN_INFO "%s: boot from normal boot\n",__func__);
-	}
-
-	*reason_addr = (uint32_t)0;
-
-	
 
 	return 0;
 }

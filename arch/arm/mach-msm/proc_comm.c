@@ -24,8 +24,6 @@
 #include <mach/system.h>
 
 #include "proc_comm.h"
-#include "smd_private.h"
-#include "./swift/lge_errorhandler.h"
 
 #if defined(CONFIG_ARCH_MSM7X30)
 #define MSM_TRIG_A2M_INT(n) (writel(1 << n, MSM_GCC_BASE + 0x8))
@@ -109,9 +107,8 @@ int msm_proc_comm(unsigned cmd, unsigned *data1, unsigned *data2)
 	spin_lock_irqsave(&proc_comm_lock, flags);
 
 again:
-	if (proc_comm_wait_for(base + MDM_STATUS, PCOM_READY)){
-		goto crash;//original : again
-	}
+	if (proc_comm_wait_for(base + MDM_STATUS, PCOM_READY))
+		goto again;
 
 	writel(cmd, base + APP_COMMAND);
 	writel(data1 ? *data1 : 0, base + APP_DATA1);
@@ -119,9 +116,9 @@ again:
 
 	notify_other_proc_comm();
 
-	if (proc_comm_wait_for(base + APP_COMMAND, PCOM_CMD_DONE)){
-		goto crash;//original : again
-	}
+	if (proc_comm_wait_for(base + APP_COMMAND, PCOM_CMD_DONE))
+		goto again;
+
 	if (readl(base + APP_STATUS) == PCOM_CMD_SUCCESS) {
 		if (data1)
 			*data1 = readl(base + APP_DATA1);
@@ -136,20 +133,5 @@ again:
 
 	spin_unlock_irqrestore(&proc_comm_lock, flags);
 	return ret;
-crash:
-	{
-		extern int get_status_hidden_reset();
-		if(get_status_hidden_reset()==0){
-			smsm_reset_modem(SMSM_SYSTEM_DOWNLOAD);
-			smsm_change_state(0x3,0x100,0x100);
-		}
-		else{
-			smsm_reset_modem(SMSM_SYSTEM_REBOOT);
-			smsm_change_state(0x3,0x100,0x100);
-		}
-		while(1)
-			;
-	}
-		
 }
 EXPORT_SYMBOL(msm_proc_comm);

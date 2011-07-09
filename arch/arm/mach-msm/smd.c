@@ -37,7 +37,6 @@
 #include "proc_comm.h"
 #include "modem_notifier.h"
 
-#include "./swift/lge_errorhandler.h"
 #if defined(CONFIG_ARCH_QSD8X50)
 #define CONFIG_QDSP6 1
 #endif
@@ -196,20 +195,10 @@ static int check_for_modem_crash(void)
 		return 0;
 
 	if (readl(SMSM_STATE_ADDR(SMSM_MODEM_STATE)) & SMSM_RESET) {
-		pr_err("proc_comm: ARM9 has crashed\n");
-//		handle_modem_crash();
-		return 1;
-	} else {
-		return 0;
+		handle_modem_crash();
+		return -1;
 	}
-
-	/* hard reboot if possible FIXME
-	if (msm_reset_hook)
-		msm_reset_hook(0);
-	*/
-
-	for (;;)
-		;
+	return 0;
 }
 
 /* the spinlock is used to synchronize between the
@@ -1197,8 +1186,6 @@ void smsm_reset_modem(unsigned mode)
 		mode = SMSM_RESET | SMSM_SYSTEM_DOWNLOAD;
 	} else if (mode == SMSM_MODEM_WAIT) {
 		mode = SMSM_RESET | SMSM_MODEM_WAIT;
-	} else if(mode == SMSM_SYSTEM_REBOOT) {
-		mode = SMSM_RESET | SMSM_SYSTEM_REBOOT;
 	} else { /* reset_mode is SMSM_RESET or default */
 		mode = SMSM_RESET;
 	}
@@ -1222,22 +1209,8 @@ void smsm_reset_modem_cont(void)
 }
 EXPORT_SYMBOL(smsm_reset_modem_cont);
 
-struct ram_console_buffer {
-	uint32_t sig;
-	uint32_t start;
-	uint32_t size;
-	uint8_t data[0];
-};
-static struct ram_console_buffer* ram_console_buf=0;
-extern struct ram_console_buffer *get_ram_console_buffer(void);
-extern uint32_t g_fb_addr;
-
 static irqreturn_t smsm_irq_handler(int irq, void *data)
 {
-	int ret;
-	extern int get_status_hidden_reset();
-	uint32_t *reason_addr;
-	uint32_t *fb_addr;
 	unsigned long flags;
 	static uint32_t prev_smem_q6_apps_smsm;
 	uint32_t mux_val;
@@ -1279,27 +1252,10 @@ static irqreturn_t smsm_irq_handler(int irq, void *data)
 
 		} else if (modm & SMSM_RESET) {
 			apps |= SMSM_RESET;
-			spin_unlock_irqrestore(&smem_lock, flags);
-			if(get_status_hidden_reset()==0){
-				smsm_reset_modem(SMSM_SYSTEM_DOWNLOAD);
-				smsm_change_state(0x3,0x100,0x100);
-			} else{
-				ram_console_buf = get_ram_console_buffer();
-				reason_addr = &ram_console_buf->data[1024*128-16];
-				fb_addr = &ram_console_buf->data[1024*128-20];
-				*reason_addr = 0x73122000;
-				*fb_addr = g_fb_addr;
-				smsm_reset_modem(SMSM_SYSTEM_REBOOT);
-				smsm_change_state(0x3,0x100,0x100);
-			}
-			while(1)
-				;
 		} else {
 			apps |= SMSM_INIT;
 			if (modm & SMSM_SMDINIT)
 				apps |= SMSM_SMDINIT;
-//			if (modm & SMSM_RPCINIT)
-//				apps |= SMSM_RPCINIT;
 			if ((apps & (SMSM_INIT | SMSM_SMDINIT | SMSM_RPCINIT)) ==
 				(SMSM_INIT | SMSM_SMDINIT | SMSM_RPCINIT))
 				apps |= SMSM_RUN;

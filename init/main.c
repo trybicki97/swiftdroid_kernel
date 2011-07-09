@@ -75,9 +75,6 @@
 #include <asm/smp.h>
 #endif
 
-#include "../arch/arm/mach-msm/smd_private.h"
-static int check_hidden_reset(void);
-
 static int kernel_init(void *);
 
 extern void init_IRQ(void);
@@ -672,7 +669,6 @@ asmlinkage void __init start_kernel(void)
 	signals_init();
 	/* rootfs populating might need page-writeback */
 	page_writeback_init();
-	check_hidden_reset();
 #ifdef CONFIG_PROC_FS
 	proc_root_init();
 #endif
@@ -786,33 +782,6 @@ static void run_init_process(char *init_filename)
 	argv_init[0] = init_filename;
 	kernel_execve(init_filename, argv_init, envp_init);
 }
-
-extern int msm_fb_refesh_enabled;
-static int crash_flag=0;
-
-static int check_hidden_reset(void)
-{
-	if(crash_flag){
-		msm_fb_refesh_enabled = 0;
-		printk(KERN_INFO "%s: crash flag = %d\n",__func__,crash_flag);
-	}
-}
-
-int __init lge_crash_check(char* s)
-{
-	if(!strcmp(s,"on")){
-		crash_flag = 1;
-	} else {
-		crash_flag = 0;
-	}
-	printk(KERN_INFO "%s: crash flag = %d\n",__func__,crash_flag);
-	
-	return 1;
-}
-
-__setup("crash=",lge_crash_check);
-
-
 
 /* This is a non __init function. Force it to be noinline otherwise gcc
  * makes it inline to init() and it becomes part of init.text section
