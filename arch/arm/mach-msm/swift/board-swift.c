@@ -74,10 +74,10 @@
 uint32_t g_fb_addr=0;
 // MOD : [KERNEL] 5340 KERNEL PATCH
 #ifdef CONFIG_ARCH_MSM7X27
-#define MSM_PMEM_MDP_SIZE	0x1700000
-#define MSM_PMEM_ADSP_SIZE	0xAE4000
+#define MSM_PMEM_MDP_SIZE	0x1700000 /*0x1B76000*/
+#define MSM_PMEM_ADSP_SIZE	0xAE4000 /*0xB71000*/
 #define MSM_PMEM_AUDIO_SIZE	0x5B000
-#define MSM_FB_SIZE		0x177000
+#define MSM_FB_SIZE		0x177000 /*0x96000 | 0x177000*/
 #define MSM_GPU_PHYS_SIZE	SZ_2M
 #define PMEM_KERNEL_EBI1_SIZE	0x1C000
 #endif
@@ -2071,7 +2071,7 @@ static void __init pmem_gpu1_size_setup(char **p)
 __early_param("pmem_gpu1_size=", pmem_gpu1_size_setup);
 #endif
 
-static unsigned fb_size = MSM_FB_SIZE;
+static unsigned fb_size = 0x96000; // MSM_FB_SIZE
 static void __init fb_size_setup(char **p)
 {
 	fb_size = memparse(*p, p);
