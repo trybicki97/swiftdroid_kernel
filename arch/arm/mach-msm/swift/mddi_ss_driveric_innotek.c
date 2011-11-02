@@ -99,7 +99,7 @@ static int __init mddi_ss_driveric_hvga_init(void)
 	pinfo.bl_max = 32;
 	pinfo.bl_min = 1;
 
-#if 1 
+#if 0 
 	pinfo.clk_rate = 82880000;
 	pinfo.clk_min =  80000000;
 	pinfo.clk_max =  90000000;
